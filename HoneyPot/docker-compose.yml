@@ -1,0 +1,16 @@
+version: '2.4'
+
+services:
+  honey-pot:
+    container_name: honey-pot
+    build:
+      context: .
+      dockerfile: HoneyPot.Api/Dockerfile
+    ports:
+      - "4242:80"
+    environment:
+      - "HoneyPotServiceOptions__PollingIntervalInMinutes=6"
+
+networks:
+  local:
+    name: local

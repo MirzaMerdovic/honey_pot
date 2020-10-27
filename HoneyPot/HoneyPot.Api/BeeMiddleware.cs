@@ -38,6 +38,9 @@ namespace HoneyPot.Api
 
                 await _mediator.Publish(new HoneySentNotification { Name = id, TimeTook = elapsed });
 
+                context.Response.StatusCode = 200;
+                await context.Response.WriteAsync("OK");
+
                 return;
             }
 

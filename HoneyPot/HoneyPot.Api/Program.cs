@@ -2,11 +2,12 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 
 namespace HoneyPot.Api
@@ -17,13 +18,21 @@ namespace HoneyPot.Api
         {
             var host =
                 new HostBuilder()
+                    .ConfigureAppConfiguration(builder =>
+                    {
+                        builder
+                            .SetBasePath(Directory.GetCurrentDirectory())
+                            .AddJsonFile("appsettings.json", optional: false, true)
+                            .AddEnvironmentVariables()
+                            .Build();
+                    })
                     .ConfigureWebHostDefaults(builder =>
                     {
                         builder.UseSetting(WebHostDefaults.DetailedErrorsKey, "true");
 
                         builder.ConfigureKestrel(x =>
                         {
-                            x.ListenAnyIP(4242);
+                            x.ListenAnyIP(80);
                         });
 
                         builder.Configure(app =>
@@ -49,6 +58,8 @@ namespace HoneyPot.Api
                     })
                     .ConfigureServices((ctx, services) =>
                     {
+                        services.Configure<HoneyPotServiceOptions>(ctx.Configuration.GetSection(nameof(HoneyPotServiceOptions)));
+
                         services.AddSingleton(new Queue<HoneySentNotification>());
 
                         services.AddMediatR(new[] { typeof(HoneySentNotification) });
