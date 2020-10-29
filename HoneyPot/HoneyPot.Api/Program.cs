@@ -1,11 +1,12 @@
-﻿using MediatR;
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Caching.StackExchangeRedis;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -30,11 +31,6 @@ namespace HoneyPot.Api
                     {
                         builder.UseSetting(WebHostDefaults.DetailedErrorsKey, "true");
 
-                        builder.ConfigureKestrel(x =>
-                        {
-                            x.ListenAnyIP(80);
-                        });
-
                         builder.Configure(app =>
                         {
                             app.UseRouting();
@@ -53,23 +49,30 @@ namespace HoneyPot.Api
 
                             app.UseCors("AllowAllPolicy");
 
-                            app.UseMiddleware<BeeMiddleware>();
+                            app.UseMiddleware<BeeMiddleware>(Array.Empty<object>());
                         });
                     })
                     .ConfigureServices((ctx, services) =>
                     {
                         services.Configure<HoneyPotServiceOptions>(ctx.Configuration.GetSection(nameof(HoneyPotServiceOptions)));
 
-                        services.AddSingleton(new Queue<HoneySentNotification>());
-
-                        services.AddMediatR(new[] { typeof(HoneySentNotification) });
-
-                        services.AddTransient<INotificationHandler<HoneySentNotification>, HoneySentNotificationHandler>();
+                        services.AddSingleton(new Queue<HoneySentRequest>());
 
                         services.AddLogging(x => x.AddConsole());
                         services.AddCors();
 
                         services.AddHttpClient();
+
+                        services.AddStackExchangeRedisCache(x =>
+                        {
+                            x.Configuration = "localhost:6379";
+                            x.InstanceName = "master";
+                            x.ConfigurationOptions = new StackExchange.Redis.ConfigurationOptions
+                            {
+                                AbortOnConnectFail = false
+                            };
+                            x.ConfigurationOptions.EndPoints.Add("localhost", 6379);
+                        });
 
                         services.AddHostedService<HoneyPotService>();
                     })

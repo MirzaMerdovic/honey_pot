@@ -1,8 +1,9 @@
-﻿using MediatR;
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using System;
-using System.Diagnostics;
-using System.Net.Http;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace HoneyPot.Api
@@ -10,33 +11,30 @@ namespace HoneyPot.Api
     internal class BeeMiddleware
     {
         private readonly RequestDelegate _next;
-        private readonly IHttpClientFactory _factory;
-        private readonly IMediator _mediator;
+        private readonly Queue<HoneySentRequest> _notifications;
 
-        private readonly Stopwatch _watch = new Stopwatch();
-
-        public BeeMiddleware(RequestDelegate next, IHttpClientFactory factory, IMediator mediator)
+        public BeeMiddleware(RequestDelegate next, Queue<HoneySentRequest> notifications)
         {
             _next = next;
-            _factory = factory;
-            _mediator = mediator;
+            _notifications = notifications;
         }
 
         public async Task Invoke(HttpContext context)
         {
             if (context.Request != null &&
+                context.Request.Method.Equals("POST", StringComparison.InvariantCultureIgnoreCase) &&
                 context.Request.Path.HasValue &&
-                context.Request.Path.Value.Equals("/api/bees", StringComparison.InvariantCultureIgnoreCase) &&
-                context.Request.Query.ContainsKey("id"))
+                context.Request.Path.Value.Equals("/api/bees", StringComparison.InvariantCultureIgnoreCase))
             {
-                var id = context.Request.Query["id"];
-                var client = _factory.CreateClient();
+                context.Request.EnableBuffering();
 
-                _watch.Restart();
-                _ = await client.GetAsync(new Uri($"https://restcountries.eu/rest/v2/name/{id}"));
-                var elapsed = _watch.ElapsedMilliseconds;
+                using var reader = new StreamReader(context.Request.Body, Encoding.UTF8, true, 1024, true);
+                string bodyStr = await reader.ReadToEndAsync();
+                context.Request.Body.Position = 0;
 
-                await _mediator.Publish(new HoneySentNotification { Name = id, TimeTook = elapsed });
+                var honeySent = JsonSerializer.Deserialize<HoneySentRequest>(bodyStr);
+
+                _notifications.Enqueue(honeySent);
 
                 context.Response.StatusCode = 200;
                 await context.Response.WriteAsync("OK");
