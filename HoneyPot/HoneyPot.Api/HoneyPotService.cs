@@ -47,7 +47,7 @@ namespace HoneyPot.Api
                         var name = collectedHoney.Key;
                         var total = collectedHoney.Value;
 
-                        _logger.LogInformation($"Collection honey for: {name}", Array.Empty<object>());
+                        _logger.LogInformation($"Counting honey for: {name}", Array.Empty<object>());
 
                         var item = await _cache.GetAsync(name, cancellationToken);
 
@@ -66,10 +66,12 @@ namespace HoneyPot.Api
                             var payload = JsonSerializer.Serialize(honeyAmount);
                             await _cache.SetStringAsync(name, payload, cancellationToken);
                         }
-                        _logger.LogWarning($"Name: {name}. Total time: {total}.", Array.Empty<object>());
+                        _logger.LogWarning($"Name: {name}. Total honey collected: {total}.", Array.Empty<object>());
                     }
 
-                    _logger.LogWarning($"Processed {_collector.Count} notifications.", Array.Empty<object>());
+                    _logger.LogWarning($"Processed {_collector.Count}.", Array.Empty<object>());
+
+                    _collector.Clear();
                 }
                 catch (Exception ex)
                 {
