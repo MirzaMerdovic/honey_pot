@@ -3,10 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,19 +12,19 @@ namespace HoneyPot.Api
 {
     internal class HoneyPotService : IHostedService
     {
-        private readonly Queue<HoneySentRequest> _notifications;
+        private readonly HoneyCollector _collector;
         private readonly HoneyPotServiceOptions _options;
         private readonly IDistributedCache _cache;
         private readonly ILogger _logger;
 
         public HoneyPotService(
             IOptionsMonitor<HoneyPotServiceOptions> options,
-            Queue<HoneySentRequest> notifications,
+            HoneyCollector collector,
             IDistributedCache cache,
             ILogger<HoneyPotService> logger)
         {
             _options = options.CurrentValue;
-            _notifications = notifications;
+            _collector = collector;
             _cache = cache;
             _logger = logger;
         }
@@ -40,42 +37,43 @@ namespace HoneyPot.Api
 
                 await Task.Delay(TimeSpan.FromMinutes(_options.PollingIntervalInMinutes));
 
-                HoneySentRequest[] copy = new HoneySentRequest[_notifications.Count];
-                _notifications.CopyTo(copy, 0);
-
-                _notifications.Clear();
+                if (_collector.Count == 0)
+                    continue;
 
                 try
                 {
-                    foreach (var group in copy.GroupBy(x => x.Name))
+                    foreach (var collectedHoney in _collector)
                     {
-                        int totalAmount = group.Sum(x => x.Amount);
+                        var name = collectedHoney.Key;
+                        var total = collectedHoney.Value;
 
-                        var item = await _cache.GetAsync(group.Key, cancellationToken);
+                        _logger.LogInformation($"Collection honey for: {name}", Array.Empty<object>());
+
+                        var item = await _cache.GetAsync(name, cancellationToken);
 
                         if (item == null)
                         {
-                            var payload = JsonSerializer.Serialize(new HoneyAmount { TotalAmount = totalAmount });
-                            await _cache.SetStringAsync(group.Key, payload, cancellationToken);
+                            var payload = JsonSerializer.Serialize(new HoneyAmount { TotalAmount = total });
+                            await _cache.SetStringAsync(name, payload, cancellationToken);
                         }
                         else
                         {
                             using var stream = new MemoryStream(item);
                             var honeyAmount = await JsonSerializer.DeserializeAsync<HoneyAmount>(stream, cancellationToken: cancellationToken);
 
-                            honeyAmount.TotalAmount += totalAmount;
+                            honeyAmount.TotalAmount += total;
 
                             var payload = JsonSerializer.Serialize(honeyAmount);
-                            await _cache.SetStringAsync(group.Key, payload, cancellationToken);
+                            await _cache.SetStringAsync(name, payload, cancellationToken);
                         }
-                        _logger.LogWarning($"Name: {group.Key}. Total time: {totalAmount}. Requests count: {group.Count()}", Array.Empty<object>());
+                        _logger.LogWarning($"Name: {name}. Total time: {total}.", Array.Empty<object>());
                     }
+
+                    _logger.LogWarning($"Processed {_collector.Count} notifications.", Array.Empty<object>());
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Caching honey failed.", Array.Empty<object>());
-
-                    copy.ToList().ForEach(_notifications.Enqueue);
                 }
             }
         }

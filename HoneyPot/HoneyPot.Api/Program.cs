@@ -1,13 +1,12 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Caching.StackExchangeRedis;
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -38,12 +37,13 @@ namespace HoneyPot.Api
                             app.UseExceptionHandler(builder =>
                             {
                                 builder.Run(
-                                    async context =>
+                                    context =>
                                     {
-
                                         var loggerFactory = context.RequestServices.GetService<ILoggerFactory>();
                                         var exceptionHandler = context.Features.Get<IExceptionHandlerFeature>();
                                         loggerFactory.CreateLogger("ExceptionHandler").LogError(exceptionHandler.Error, exceptionHandler.Error.Message, null);
+
+                                        return Task.CompletedTask;
                                     });
                             });
 
@@ -55,23 +55,18 @@ namespace HoneyPot.Api
                     .ConfigureServices((ctx, services) =>
                     {
                         services.Configure<HoneyPotServiceOptions>(ctx.Configuration.GetSection(nameof(HoneyPotServiceOptions)));
+                        services.Configure<RedisCacheOptions>(ctx.Configuration.GetSection(nameof(RedisCacheOptions)));
 
-                        services.AddSingleton(new Queue<HoneySentRequest>());
+                        services.AddSingleton(new HoneyCollector());
 
-                        services.AddLogging(x => x.AddConsole());
+                        services.AddLogging(x => x.AddConsole().SetMinimumLevel(LogLevel.Warning));
                         services.AddCors();
 
                         services.AddHttpClient();
-
                         services.AddStackExchangeRedisCache(x =>
                         {
-                            x.Configuration = "localhost:6379";
-                            x.InstanceName = "master";
-                            x.ConfigurationOptions = new StackExchange.Redis.ConfigurationOptions
-                            {
-                                AbortOnConnectFail = false
-                            };
-                            x.ConfigurationOptions.EndPoints.Add("localhost", 6379);
+                            x.Configuration = ctx.Configuration["ConnectionStrings:Redis"];
+                            x.InstanceName = "local";
                         });
 
                         services.AddHostedService<HoneyPotService>();

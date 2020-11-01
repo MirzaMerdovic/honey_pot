@@ -1,22 +1,22 @@
 ﻿using Microsoft.AspNetCore.Http;
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace HoneyPot.Api
 {
     internal class BeeMiddleware
     {
-        private readonly RequestDelegate _next;
-        private readonly Queue<HoneySentRequest> _notifications;
+        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
-        public BeeMiddleware(RequestDelegate next, Queue<HoneySentRequest> notifications)
+        private readonly RequestDelegate _next;
+        private readonly HoneyCollector _collector;
+
+        public BeeMiddleware(RequestDelegate next, HoneyCollector collector)
         {
             _next = next;
-            _notifications = notifications;
+            _collector = collector;
         }
 
         public async Task Invoke(HttpContext context)
@@ -26,18 +26,22 @@ namespace HoneyPot.Api
                 context.Request.Path.HasValue &&
                 context.Request.Path.Value.Equals("/api/bees", StringComparison.InvariantCultureIgnoreCase))
             {
+                var cancellation = context?.RequestAborted ?? CancellationToken.None;
+
                 context.Request.EnableBuffering();
 
-                using var reader = new StreamReader(context.Request.Body, Encoding.UTF8, true, 1024, true);
-                string bodyStr = await reader.ReadToEndAsync();
-                context.Request.Body.Position = 0;
+                var honeySent =
+                    await JsonSerializer.DeserializeAsync<HoneySentRequest>(
+                        context.Request.Body,
+                        JsonOptions,
+                        cancellation);
 
-                var honeySent = JsonSerializer.Deserialize<HoneySentRequest>(bodyStr);
+                var name = honeySent.Name.ToLowerInvariant();
 
-                _notifications.Enqueue(honeySent);
+                _collector.RegisterHoneyAmount(name, honeySent.Amount);
 
                 context.Response.StatusCode = 200;
-                await context.Response.WriteAsync("OK");
+                await context.Response.WriteAsync(honeySent.Name, cancellation);
 
                 return;
             }

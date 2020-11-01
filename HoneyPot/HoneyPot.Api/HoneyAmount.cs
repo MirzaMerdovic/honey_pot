@@ -2,6 +2,6 @@
 {
     public class HoneyAmount
     {
-        public int TotalAmount { get; set; }
+        public long TotalAmount { get; set; }
     }
 }

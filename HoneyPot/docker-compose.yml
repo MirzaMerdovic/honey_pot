@@ -1,7 +1,25 @@
 version: '2.4'
 
+# Templates:
+x-base: &base-service-template
+  init: true
+  networks:
+    local:
+
 services:
+  portainer:
+    <<: *base-service-template
+    image: portainer/portainer:latest
+    container_name: portainer.ctn
+    command: -p :80
+    ports:
+      - "9000:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
   honey-pot:
+    <<: *base-service-template
     container_name: honey-pot
     build:
       context: .
@@ -9,11 +27,12 @@ services:
     ports:
       - "4242:80"
     environment:
-      - "HoneyPotServiceOptions__PollingIntervalInMinutes=6"
-    networks:
-      - local
+      - "HoneyPotServiceOptions__PollingIntervalInMinutes=1"
+      - "Kestrel__EndPoints__Http__Url=http://0.0.0.0:80"
+      - "ConnectionStrings__Redis=redis:6379,abortConnect=False"
 
   redis:
+    <<: *base-service-template
     image: "redis:6.0.9-alpine"
     container_name: redis
     command: redis-server
@@ -24,9 +43,10 @@ services:
     #volumes:
     #  - ./redis-data:/var/lib/redis
     #  - ./redis.conf:/usr/local/etc/redis/redis.conf
-    networks:
-      - local
 
 networks:
   local:
     name: local
+
+volumes:
+  portainer_data:
